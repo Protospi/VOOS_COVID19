@@ -1,1 +1,5 @@
 Pasta com os bancos de dados necessários para a análise.
+Links para arquivos:
+1 - Transporte aéreo 2020 : https://www.anac.gov.br/assuntos/dados-e-estatisticas/dados-estatisticos/dados-estatisticos.
+2 - Coordenadas Gengráficas: https://developers.google.com/public-data/docs/canonical/countries_csv
+3 - Covid 19 e Indicadores Sociais: https://ourworldindata.org/coronavirus#which-countries-are-making-progress-against-the-pandemic
