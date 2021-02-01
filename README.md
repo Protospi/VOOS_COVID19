@@ -1,4 +1,4 @@
-# Modelagem do Tráfego Aéreo em 2020
+# Tráfego Aéreo das Companhias Brasileiras em 2020
 
 * O ano de 2020 foi marcado principalmente pela pandêmia do corona virus que atingiu proporções globais. Para o setor de aviaçõa e tráfego aéreo não foi diferente. O medo da contaminação dentro das aeronaves, o fechamento de fronteiras e a suspensão por parte dos governos de grande parte das operações das companhias aéreas são alguns dos fatores que contribuiram para a diminuição na demanda de transporte aéreo por parte da população. 
 
