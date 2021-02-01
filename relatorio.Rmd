@@ -1,0 +1,1607 @@
+---
+title: "Volume de Passageiros na covid 19"
+author: "Pedro Lóes - Introdução a Grafos Aleatórios - DEST - UFMG"
+date: "23/01/2021"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+runtime: shiny
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+***
+
+<center>
+![](covid_plane.jpg){width=800px}
+</center>
+
+***
+
+# Tráfego Aéreo das Companhias Brasileiras em 2020
+
+* O ano de 2020 foi marcado principalmente pela pandêmia do corona virus que atingiu proporções globais. Para o setor de aviaçõa e tráfego aéreo não foi diferente. O medo da contaminação dentro das aeronaves, o fechamento de fronteiras e a suspensão por parte dos governos de grande parte das operações das companhias aéreas são alguns dos fatores que contribuiram para a diminuição na demanda de transporte aéreo por parte da população. 
+
+* Os modelos de precificação das companhias aéreas não estavam preparados para o evento COVID 19, porque não possuíam dados historícos para acomodar a variável corona vírus. A queda na demanda provocou a queda no preço das passagens com trechos em que os preços atingiram os incríveis 6 dólares entre New Jersey e Florida. 
+
+* Como o número de passageiros é uma variável de contagem ao longo do tempo, um modelo linear generalizado com a distribuição de Poisson parece adequado para acomodar a flutuação da demanda em futuras pandemias. 
+
+* O objetivo da construção deste modelo foi orientar as companhias aéreas brasileiras na tomada de decisão sobre a suspensão ou funcionamento de rotas e aeronaves baseado no custo-benefício da operação frente a uma nova pandêmia global. A demanda de número de passageiros foi ajustada em função do número de mortes e casos acumulados, bem como o número de novos casos e novos casos acumulados com intuito de que essas variáveis pudessem modelar a diminuição de passageiros e assim servir como ferramenta para futuros ajustes na operação.
+
+## Introdução
+
+* O presente trabalho foi desenvolvido com o objetivo de aplicar as técnicas ensinadas no curso _"Introdução aos Grafos Aleatórios"_ do Departamento de Estatística da UFMG. O tema escolhido para o trabalho foi “Volume de passageiros na covid 19” e o modelo escolhido foi o modelo de gravidade do capítulo 10 _"Fluxo de Redes"_  do livro  _"Statistical Analysis of Network Data"_.
+
+* Partindo da concepção de ignorância dos algorítimos em relação aos eventos nunca registrados surgiu o interesse em investigar como seria possível incorporar esse tipo de evento nos modelos de precificação das companhias aéreas. É claro que o presente trabalho é apenas um exercício e não pode ser usado para objetivos tão sérios, mas pode funcionar bem como exercício prático do conteúdo ensinado.
+
+* Os dados sobre o covid foram coletados no sítio “ourworldindata” e os dados do número de passageiros foram coletados  no sitio da ANAC ver referências. 
+
+* Os dados foram limpos e processados para serem utilizados na análise descritiva e modelagem.
+
+* A etapa da análise descritiva foi elaborada usando estatística do universo de grafos e técnicas de visualização da rede de fluxo de passageiros entre países.
+
+* A modelagem foi realizada utilizando modelos lineares generalizados considerando a distribuição Poisson.
+
+* Finalmente as conclusões indicaram que de fato as variáveis escolhidas foram estatisticamente significativas para a modelagem do número de passageiros.
+
+* A modelagem do problema foi implementada no ambiente de prototipagem R utilizando os pacotes `tidyverse` , `igraph` , `lubridate` , `DT` , `naniar` , `shiny` , `broom` , `geosphere` , `gridExtra`.
+  
+```{r warning=F, error=F, message=F}
+
+# Carrega Bibliotecas
+library(tidyverse)
+library(igraph)
+library(lubridate)
+library(DT)
+library(naniar)
+library(shiny)
+library(broom)
+library(geosphere)
+library(gridExtra)
+library(shinyWidgets)
+library(visNetwork)
+
+```
+
+ ***
+ 
+# Bancos de Dados 
+
+* Para a construção da modelagem da variável resposta número de passageiros foram pesquisados e baixados:
+  + Dados sobre o tráfego aéreo no ano de 2020 na granularidade mensal do número de passageiros em cada trecho (origem -> destino).
+  + Dados sobre as coordenadas geográficas dos pontos de centro dos países considerados na análise. Esse dados permitiram o cálculo da distância entre paises considerada variável significativa para modelos de gravidade conforme a lei de gravitação universal de Newton. 
+  + Dados sobre o número de casos e mortes de corona vírus no ano de 2020. Esses dados forneceram a quantidade de novos casos e novas mortes por pais na granularidade de meses.
+
+## Tráfego Áereo
+
+* Desde do final da decada de 20 do século 20, quando Charles Lindenberg cruzou o atlântico em um vôo de 33 horas, que os registros de voos internacionais vem sendo catalogados e armazenados. Hoje esse registros são utilizados por algorítimos de precificação para ajustar a oferta em relação a demanda com objetivo de máximizar lucros. 
+
+* Em 2020 o mundo enfrentou a pandêmia do corona vírus que alterou a economia e a sociedade de forma radical. Parece óbvio que nessa primeira experiência as companhias foram pegas de surpresa e não puderam corrigir seus modelos a tempo, gerando assim irracionalidades como passagens de 6 dólares que não cobririam sequer uma pequena parte da operação das companhias.
+
+* Uma pesquisa foi feita na rede mundial de computadores para encontrar dados relevantes que pudesse fornecer informações para responder a pergunta: Como a pandêmia afetou o transporte aéreo?
+  + O sítio da ANAC oferece atualizações de bancos de dados disponíveis para donwload mensalmente. O Banco `resumo_anual_2020.csv` baixado neste sítio foi utilizado para recuperar as origens e destinos bem como a variável resposta quantidade de passageiros ao longo do ano de 2020.
+  + O banco de dados com as informações sobre os tráfego aéreo de companhias aéreas brasileiras no período de 01-01-2020 até 31-12-2020 foi baixado no URL: [ANAC](https://www.anac.gov.br/assuntos/dados-e-estatisticas/dados-estatisticos/dados-estatisticos).
+
+### Importação   
+
+* A importação ds dados foi realizada com a função `read_delim` o pacore `read_r`.
+
+* O argumento separador foi definido como `";"`.
+
+* O argumento encoding dos dados foi definido como `"windows-1252"` 
+
+
+```{r warning=F, error=F, message=F}
+
+# Carrega dados de 2020
+voos1 <- read_delim("https://raw.githubusercontent.com/Protospi/VOOS_COVID19/main/dados/resumo_anual_2020.csv", 
+                   ";",
+                   escape_double = FALSE,
+                   trim_ws = TRUE,
+                   locale = locale(encoding = "windows-1252"))
+
+# Imprime dados
+renderDataTable({ datatable(voos1, options = list(dom = 'tip',
+                                                 pageLength=3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela de Dados da ANAC Original ano 2020",
+                                                              style="color:black; font-weight: bold")) })
+# Calcula dimesoes do banco
+dim1 <- dim(voos1)
+
+```
+
+* A dimensão do banco original é  `r dim1[1]`  linhas por `r dim1[2]` colunas.
+
+* Diversas colunas poderiam ter sido utilizadas para tentar explicar a variação de passageiros, porém, com intuito de simplificar a análise e evitar correlação entre as variáveis foi optado por reduzir a quantidade de atributos considerados como relevantes para a análise em questão.
+
+### Limpeza 
+
+* O gráfico de dados faltantes do pacote `naniar` foi utilizado para avaliar visualmente a quantidade de dados faltantes e auxiliar na tomada de decisão sobre descartes e ou imputações de dados.
+
+* Somente as colunas `empresa`, `nacionalidade`, `mes`, `origem`, `origem_pais`, `destino`, `destino_pais`, `natureza`, `grupo`, `passageiros_pagos`, `passageiros_gratis`, `c_paga`, `c_gratis` e `correio` foram mantidas como possíveis candidatas para a análise.
+
+* Os gráficos de antes e depois da limpeza ilustram a remoção dos dados faltantes.
+
+```{r warning=F, error=F, message=F, fig.align='center', fig.height=6, fig.width=10}
+
+# Declara numero das variaveis de interesse
+variaveis <- c(1, 3, 5, 6, 10, 12, 16, 18, 19, 20, 21, 22, 23, 24)
+
+# Seleciona variaveis de interesse
+voos <- voos1 %>% select(all_of(variaveis))
+
+# Renomeia variaveis
+colnames(voos) <- c("empresa",
+                    "nacionalidade",
+                    "mes",
+                    "origem",
+                    "origem_pais",
+                    "destino",
+                    "destino_pais",
+                    "natureza",
+                    "grupo",
+                    "passageiros_pagos",
+                    "passageiros_gratis",
+                    "c_paga",
+                    "c_gratis",
+                    "correio")
+
+# Declara paises de Interesse
+paises_alvo <- c("FRANÇA", "BRASIL", "ESTADOS UNIDOS DA AMÉRICA",
+                 "BÉLGICA", "ESPANHA", "RÚSSIA", "CANADÁ", "CHILE",
+                 "COLÔMBIA", "ALEMANHA", "PARAGUAI", "HOLANDA",
+                 "ARGENTINA", "MÉXICO", "URUGUAI", "ITÁLIA", 
+                 "CUBA", "VENEZUELA", "REINO UNIDO", "GRÉCIA",
+                 "NIGÉRIA", "IRLANDA", "ANGOLA", "SUÍÇA", "ETIÓPIA",
+                 "ISRAEL", "ÍNDIA", "PERU", "CHINA", "ÁFRICA DO SUL")
+
+# Grafico para verificar remocao de faltantes
+p1 <- naniar::gg_miss_var(voos1) +
+        ylab("Faltantes")+
+        xlab("Variaveis")+ 
+        ggtitle("Antes")
+
+# Remove dados faltantes
+voos <- voos[complete.cases(voos),]
+
+# Grafico para verificar remocao de faltantes
+p2 <- naniar::gg_miss_var(voos) +
+        ylab("Faltantes")+
+        xlab("Variaveis")+
+        ggtitle("Depois")
+
+# Grid dos graficos de faltantes antes e depois
+grid.arrange(p1, p2, ncol = 2)
+
+# Filtra paises de origem e destino
+voos <- voos %>% 
+    filter(destino_pais %in% paises_alvo & origem_pais %in% paises_alvo)
+
+# Voos limpa
+voos_limpo <- voos %>% 
+                select(3,5,7,10)
+
+```
+
+* As colunas com muitos dados faltantes ou informações de pouca relevância para a modelagem foram eliminadas do banco de dados.
+
+* O banco foi filtrado por países selecionados arbitrariamente.
+
+* As variáveis de maior interesse como `mes`, `origem_pais`, `destino_pais` e `passageiros_pagos` foram mantidas.
+
+* Tabela dos dados tratados.
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+# Imprime dados
+renderDataTable({ datatable(voos_limpo, options = list(dom = 'tip',
+                                                 pageLength=3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela de Dados Selecionados e Limpos da ANAC ano 2020",
+                                                              style="color:black; font-weight: bold")) })
+
+# Calcula dimensoes do banco limpo
+dim2 <- dim(voos_limpo)
+
+```
+
+
+* As linhas ou observações das variáveis remanescentes que possuíam valores faltantes em qualquer coluna foram excluídas.
+
+* Após a limpeza o banco ficou com a dimensão de `r dim2[1]` linhas por `r dim2[2]` colunas indicando a perda de `r dim1[1] - dim2[1]` registros e a remoção de `r dim1[2] - dim2[2]` colunas.
+
+## Coordenadas Geográficas
+
+* Para o cálculo das distâncias entre os países na unidade de kilômetros foi necessário pesquisar um banco de dados com as informações sobre as coordenadas geográficas dos pontos de centros dos países em graus de latitude e longitude.
+
+* As informações sobre o ponto de centro das coordenadas geográficas de cada país foram recuperadas utilizando o banco de coordenadas geográficas do arquivo `countries.csv` baixado do sítio [developers.google](https://developers.google.com/public-data/docs/canonical/countries_csv). Porém esse banco só possuia os nomes dos países em ingles e não possuia um chave para a junção com os dados de transporte aéreo.
+
+* Para remediar a situação um outros banco com o nome dos países em português e a variável código de duas letras dos países foi recuperado no sítio [sport-histoire](https://www.sport-histoire.fr/pt/Geografia/Codigos_ISO_Paises.php) para realizar a junção dos bancos. essa chave possibilitou cobinar as informações de transporte aéreo e coordenadas geográficas.
+
+### Importação 
+
+* A importação dos banco de dados foi realizada com as funções `read_delim` e `read_csv` do pacote `read_r`.
+
+* Duas tabelas dos arquivos `paises_cod.csv` e `coord_paises.csv` foram combinadas com o código de 2 letras dos países para recuperar a informação de coordenadas dos países. Pelo fato de que o banco de coordenadas tinha os nomes dos paises em ingles e o banco de tráfego aéreo em português, a junção foi feita pelo código de 2 letras de cada país utilizando esse banco de código dos nomes como acessório para ligar as informações de tráfego aéreo e coordenadas. 
+
+```{r warning=F, error=F, message=F}
+
+# Carrega codigos de paises
+paises = read_csv("https://raw.githubusercontent.com/Protospi/VOOS_COVID19/main/dados/paises_cod.csv") %>%
+  select(- num)
+
+# Carrega banco de coordenadas de paises
+coord_paises <- read_delim("coord_paises.csv", 
+                           "\t", escape_double = FALSE, trim_ws = TRUE)
+
+# Adiciona coordenadas para paises e distancia euclidiana
+coord <- paises %>%
+          inner_join(coord_paises, by = c("cod" = "country")) %>%
+          select(- cod)
+
+# Imprime dados
+renderDataTable({ datatable(coord, options = list(dom = 'tip',
+                                                 pageLength=3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela dos dados de Coordenadas Geográficas",
+                                                              style="color:black; font-weight: bold")) })
+
+# Declara dimensão das cordenadas
+dim3 <- dim(coord)
+
+```
+
+* As colunas utilizada para as junções foram descartadas e os dados não apresentam valores faltantes e possuem dimensão de `r dim3[1]` linhas por `r dim3[2]` colunas .
+
+* Após a operação de junção o banco de coordenadas recuperou a informação do nome dos países em inglês na coluna `name` que foi utilizada como chave para a junção com os dados da covid 19 em etapa posterior.
+
+### Agregação e Junção
+
+* Como o objetivo da análise foi determinar a relação entre as variáveis agrupadas por `origem_pais`, `destino_pais` e `mes`, a resposta número de passageiros foi agregada com os totais destes grupos. 
+
+* Conforme indicado no livro texto _"Statistical Analysis of Network Data"_, a distância geográfica entre países em modelos de gravidade devem ser consideradas. O autor explica que em analogia a Lei de Newton da Gravitação universal, _"é assumido que a interação entre duas populações é diretamente proporcional ao tamanho dessas populações e inversamente proporcional a sua distância"_.  
+
+* Para o cálculo das distâncias entre países foi usada a função `distm` do pacote `geosphere` que calcula a distância entre coordenadas geográficas no planeta.
+
+
+```{r warning=F, error=F, message=F}
+
+# unifica data frame com contagem de passageiros e atributos geograficos 
+df_grafo_limpo <- voos_limpo %>% 
+  group_by(origem_pais, destino_pais, mes) %>%
+  summarise(passageiros = sum(passageiros_pagos)) %>% 
+  left_join(coord,
+            by = c("origem_pais" = "pais")) %>%
+  left_join(coord,
+            by = c("destino_pais" = "pais"),
+            suffix = c(".origem",
+                       ".destino")) %>% 
+  filter(passageiros > 1) %>% 
+  ungroup()
+
+# Calcula distancia em kilometros
+for( i in 1:nrow(df_grafo_limpo)){
+  
+  # Calcula distancia geospherica
+  df_grafo_limpo[i, "distancia_km" ] <- round(distm(c(as.numeric(df_grafo_limpo[i, "longitude.origem"]),
+                                              as.numeric(df_grafo_limpo[i, "latitude.origem"])),
+                                              c(as.numeric(df_grafo_limpo[i, "longitude.destino"]),
+                                              as.numeric(df_grafo_limpo[i, "latitude.destino"])),
+                                              fun = distHaversine) / 1000, 2)
+  
+}
+
+# Seleciona variaveis
+df_grafo <- df_grafo_limpo %>% 
+                select(c(1,2,3,4,7,10,11))
+
+# Imprime dados
+renderDataTable({ datatable(df_grafo, options = list(dom = 'tip',
+                                                 pageLength=3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela de Agregação de Jução",
+                                                              style="color:black; font-weight: bold")) })
+
+# Declara dimensão do banco df_grafo
+dim4 <- dim(df_grafo)
+
+```
+
+* Após as operações de agregações e filtros o banco apresentou a dimensão de `r dim4[1]` linhas ou observações da soma de passageiros nos `r dim1[1]` vôos agrupados em `origem_pais`, `destino_pais` e `mes` por `r dim4[2]` colunas que representam as variáveis resposta e explicativas.
+
+* Duas junções foram feitas para recuperar as coordenadas da origem e do destino dos aviões.
+
+* As colunas com coordenadas geográficas foram removidas após o cálculo da distância entre o centro dos países.
+
+***
+
+## Covid 19 e Indicadores Sociais
+
+* A pandemia do corona vírus 19 foi a maior pandêmia registrada nos últimos 100 anos. Atingindo a aterrorizante marca de 100 milhões de casos e mais de 2 milhões de mortes, a pandêmia implicou em diversas transformações da sociedade. Para recuperar a informação sobre o número de casos e mortes por país e mês foram pesquisadas diversas fontes de informação agregada sobre o COVID 19.
+
+* O sítio ourworldindata alega constantemente atualização os dados sobre mortes e novos casos ao longo da pandêmia. O sítio cita o Instituto de pesquisa [Jonh Hopkins](https://coronavirus.jhu.edu/map.html) como fonte dos dados.
+
+* Os dados sobre a pandêmia foram baixados no URL: [ourworldindata](https://ourworldindata.org/coronavirus#which-countries-are-making-progress-against-the-pandemic).
+
+* Esse banco de dados também possui informações sociais relevantes para o modelo como IDH, tamanho da população, expectativa de vida, e renda por individuo para cada país.
+
+### Importação dos Dados
+
+* A importação dos dados foi realizada com o pacore `read_r` da biblioteca `tidyverse`.
+
+* Pelo fato da fonte ser internacional os nomes das colunas estão na lingua inglesa.
+
+```{r warning=F, error=F, message=F}
+
+# Carrega dados Da covid
+covid_19 <- read_csv("https://raw.githubusercontent.com/Protospi/VOOS_COVID19/main/dados/covid_na.csv")
+
+# Imprime dados
+renderDataTable({ datatable(covid_19, options = list(dom = 'tip',
+                                                 pageLength = 3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela dos dados da Covid 19 e Indicadores Sociais Original",
+                                                              style="color:black; font-weight: bold")) })
+
+# Declara dimensão de covid 19
+dim5 <- dim(covid_19)
+
+```
+
+* Os dados originais apresentaram a dimensão de `r dim5[1]` linhas por `r dim5[2]` colunas.
+
+* Diversas colunas de variáveis sociais como IDH, população, expectativa de vida, etc..., poderiam ter sido consideradas para a análise. Porém, as mesmas foram removidas com intuito de reduzir o foco das variáveis explicativas no fenomeno covid 19. Outro motivo para a exclusão remete ao fato de que essas estáticas são estáticas e apresentam pouca ou nenhuma variação se considerado o tempo da pandemia.
+
+### Limpeza dos Dados
+
+* O Gráfico de dados faltantes do pacote `naniar` foi utilizado para ilustrar a limpeza realizada no banco.
+
+```{r warning=F, error=F, message=F, fig.align='center', fig.height=8, fig.width=10}
+
+# Separa banco covid
+covid <- covid_19 %>% 
+  replace_na(list(total_deaths  = 2,
+                  new_deaths  = 2,
+                  new_cases = 2,
+                  total_cases = 2)) %>% 
+  mutate(mes = month(date)) %>% 
+  group_by(location, mes) %>% 
+  summarise(new_cases = sum(new_cases),
+            total_cases = max(total_cases),
+            new_deaths = sum(new_deaths),
+            total_deaths = max(total_deaths),
+            gdp_per_capita = mean(gdp_per_capita),
+            human_development_index = mean(human_development_index),
+            population = mean(population),
+            life_expectancy = mean(life_expectancy)) %>% 
+  ungroup()
+
+# Grafico para verificar remocao de faltantes
+p3 <- gg_miss_var(covid_19) +
+        ylab("Faltantes")+
+        xlab("Variaveis")+ 
+        ggtitle("Antes")
+
+# Grafico para verificar remocao de faltantes
+p4 <- gg_miss_var(covid) +
+        ylab("Faltantes")+
+        xlab("Variaveis")+ 
+        ggtitle("Depois")
+
+# Grid dos graficos de faltantes antes e depois
+grid.arrange(p3, p4, ncol = 2)
+
+```
+
+* As variáveis de interesse com informações sobre novos casos e mortes e sobre o total de mortes e total de casos, foram as únicas colunas extraídas para a análise porque parecem ser as mais representativas  para explicar a variação no volume de passageiros ao longo do tempo na pandemia do COVID 19.  
+
+```{r warning=F, error=F, message=F}
+
+# Imprime dados
+renderDataTable({ datatable(covid, options = list(dom = 'tip',
+                                                 pageLength = 3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela dos dados da Covid 19 e Indicadores Sociais Limpos",
+                                                              style="color:black; font-weight: bold")) })
+
+# Dimensão do banco covid 19
+dim6 <- dim(covid)
+
+```
+
+* A informações sobre a covid 19 ficou representada pelo banco com dimensões de `r dim6[1]` linhas por `r dim6[2]` colunas. 
+
+* Os registros de trechos de vôo das variáveis com valores do tipo NA possivelmente representavam a ausência de teste nos primeiros mêses de 2020 e foram inputadas com a constante zero 0 para novos casos e mortes aproximando pelo fato de que os casos mesmo que existentes eram poucos.
+
+* A variáveis selecionadas incluiram a variável `location` que foi utilizada como chave estrangeira na etapa de pré-processamento dos dados para aplicar a junção com os dados de transporte aéreo e formar o banco de dados final que foi utilizado nas etapas de análise descritiva e modelagem.
+
+## Banco Final
+
+* Portanto o banco final recupera a informação de 3 bancos de dados distintos.
+  + Banco de dados de Transporte Aéreo de companhias brasileiras em 2020.
+  + Banco de dados da distância em kilomentros entre os centro dos países.
+  + Banco de dados da covid 19 no ano de 2020.
+
+### Junção
+
+* Nesta etapa foi realizada a operação de junção dos bancos com informações sobre o transporte aéreo e estatísticas da covid 19 e remoção de colunas ou registros com dados faltantes.
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+# Unifica Data frame com atributos do covid e sociais
+df_g <- df_grafo %>% 
+            left_join(covid, by = c("name.origem" = "location", "mes" = "mes")) %>% 
+            replace_na(list(total_deaths  = 0,
+                            new_deaths  = 0,
+                            new_cases = 0,
+                            total_cases = 0)) %>% 
+            left_join(covid, by = c("name.destino" = "location", "mes" = "mes"),
+                      suffix = c(".origem", ".destino")) %>% 
+                      replace_na(list(total_deaths  = 0,
+                                      new_deaths  = 0,
+                                      new_cases = 0,
+                                      total_cases = 0)) %>% 
+            select(-name.origem, name.destino) %>% 
+            ungroup()
+
+# Remove dados faltantes
+df_g <- df_g[complete.cases(df_g), - 5]
+
+# Renomeia colunas do covid
+df_g <- df_g %>% 
+          rename(novos_casos_origem = new_cases.origem,
+                 total_casos_origem = total_cases.origem,
+                 novas_mortes_origem = new_deaths.origem,
+                 total_mortes_origem = total_deaths.origem,
+                 novos_casos_destino = new_cases.destino,
+                 total_casos_destino = total_cases.destino,
+                 novas_mortes_destino = new_deaths.destino,
+                 total_mortes_destino = total_deaths.destino,
+                 pib_origem = gdp_per_capita.origem,
+                 idh_origem = human_development_index.origem,
+                 populacao_origem = population.origem,
+                 expectativa_vida_origem = life_expectancy.origem,
+                 pib_destino = gdp_per_capita.destino,
+                 idh_destino = human_development_index.destino,
+                 populacao_destino = population.destino,
+                 expectativa_vida_destino = life_expectancy.destino)
+
+# Imprime dados
+renderDataTable({ datatable(df_g, options = list(dom = 'tip',
+                                                 pageLength = 3,
+                                                 scrollX = TRUE,
+                                                 language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+                            caption = htmltools::tags$caption("Tabela dos dados da jução entre ANAC, Covid e Indicadores Sociais",
+                                                              style="color:black; font-weight: bold")) })
+
+# Dimensao do banco final
+dim7 <- dim(df_g)
+
+```
+
+* As tabelas de voôs e covid foram combinadas usando as chaves, `name = location` e `mes = mes`.
+
+* A variável `name` foi removida.
+
+* Os registros faltantes foram removidos.
+
+* As colunas com informações sobre a covid foram renomeadas para o português.
+
+* O banco final `df_g` ficou com dimesão de `r dim7[1]` linhas por `r dim7[2]` colunas.
+
+* A base de dados formada nesta etapa consiste nas informações que foram utilizadas nas etapas de análise descritiva e modelagem.
+
+***
+
+# Análise Descritiva
+
+* A análise descritiva foi dividida em visualizações dos grafos, estatísticas de centralidade, aplicação de suavizador do tipo lm para captar a tendência geral da variável resposta número de passageiros explicada pelas variáveis do COVID 19 e finalmente um gráfico de barras interativo com a contagem de passageiros por mês e por país.
+
+## Visualizações
+
+* Os grafos podem gerar representações visuais informativas sobre as relações do indíviduos conectados a rede investigada e fornecedor noções gerais sobre as tendências que serão apontadas pelo modelo.
+
+### Grafo no Mapa
+
+* Grafo dos 12 meses considerando todos os países.
+
+* No caso em questão o volume de tráfego de passageiros entre países foi ilustrado pelo largura das arestas e a força dos vertices foi relacionada ao tamanho dos vertices indicando a soma dos pesos da incidência de arestas.
+
+
+```{r warning=F, error=F, message=F, eval = F, fig.align='center', fig.height=6, fig.width=9}
+
+# Declara grafo
+g <- graph_from_data_frame(df_g, directed=T)
+
+# Define Layout
+l <- layout_with_kk(g)
+
+# Define tamanho dos vertices
+igraph_options(vertex.size=10)
+
+# Decora rotulos com nomes
+V(g)$label <- V(g)$name
+
+# Tamanho do vertice proporcional a forca
+V(g)$size <- 4*sqrt(strength(g))
+V(g)$size2 <- V(g)$size * .5
+
+# Peso das arestas por atividades em comum
+E(g)$width <- log(df_g$passageiros) / 5
+
+# Altera labels menores para 0
+V(g)$label.dist <- ifelse(V(g)$size >= 5, 0, 1.0)
+
+# Simplifica grafo
+g_2 <- igraph::simplify(g, remove.multiple = TRUE,
+                        edge.attr.comb = list(weight = "sum"))
+
+# Mapa mundi
+mapa_mundo <- map_data(map = "world") %>%
+  filter(region != "Antarctica")
+
+# Data frame de graus
+graus <- tibble(pais = names(degree(g)),
+                graus = log(degree(g),10) %>%  as.vector())
+
+# Calcula grau de centralidade
+graus_mapa <- mapa_mundo %>% 
+  left_join(coord, by = c("region"="name")) %>% 
+  full_join(graus, by = c("pais" = "pais"))
+
+# Declara vetor de paises selecionados
+paises <- c("ÁFRICA DO SUL","ALEMANHA","ARGENTINA",
+            "BRASIL","CANADÁ","CHILE",                    
+            "CHINA","COLÔMBIA","ESPANHA",                  
+            "ESTADOS UNIDOS DA AMÉRICA","ETIÓPIA","FRANÇA",
+            "HOLANDA","ISRAEL","ITÁLIA",
+            "MÉXICO","PARAGUAI","PERU",                  
+            "REINO UNIDO","SUÍÇA","URUGUAI",                  
+            "VENEZUELA","ANGOLA")
+
+# Filtra coordenadas
+coords <- coord %>%
+            filter(pais %in% paises)
+
+# Desenha gráfico geospacial
+ggplot() +
+  geom_polygon(data = graus_mapa,
+               aes(long, lat, group = group, fill = graus), 
+               show.legend = FALSE,
+               alpha = 0.6,
+               color = "white") +
+  scale_fill_viridis_b(name="", na.value = "lightgray") +
+  geom_segment(data = df_grafo_limpo, 
+               aes(x = longitude.origem, xend = longitude.destino,
+                   y = latitude.origem, yend = latitude.destino),
+               # arrow = arrow(length = unit(0.1, "inches"), # optional arrows
+               # type = "closed"),
+               size = 0.25,
+               alpha = 0.5) +
+  geom_point(data = coords,
+             aes(longitude, latitude), color = "red") +
+  theme(axis.line = element_line(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank()) +
+  labs(title = "Rede de Relações Geoespacial do Tráfego Aéreo de Companhias Brasileiras")
+
+```
+
+![](mapa_mundi.png)
+
+* Observou-se que o Brasil é vertice com maior numero de passageiros incidindo dentre todos os vertices, o que era esperado considerando que os dados são das companhias aéreas brasileiras. É razoável também ressaltar que tal fato pode prejudicar a estimação do número de passageiros devido ao fato de que da quantidade brasileira pertence a um escala diferente dos demais países. A Solução de transformação da escala de passageiros para escala logarítimica pode ser uma possível solução.
+
+### Grafos por Intervalo de Meses
+
+* O gráfico interativo usando funções do pacote `shiny` permitiu observar de forma rápida o volume de passageiros em diferentes intervalos de meses.
+
+* Alternando os botões é possível visualizar diferentes cenários.
+
+<center>
+
+```{r warning=F, error=F, message=F, fig.align='right', fig.height=10, fig.width=10}
+
+renderVisNetwork({
+  
+  # Filtra o mês
+  df_g_mes = df_g %>% 
+              filter(mes >= input$mes[1] & mes <= input$mes[2]) %>% 
+              group_by(origem_pais, destino_pais) %>% 
+              summarise(passageiros = sum(passageiros))
+  
+  # Declara grafo
+  g <- graph_from_data_frame(df_g_mes, directed=T)
+  
+  # Condicao da estatistica de centralidade
+  if(input$centralidade == "graus"){
+    
+    est <-  log(igraph::degree(g), 10) %>%  as.vector()
+    
+  } else if(input$centralidade == "proximidade"){
+    
+    est <-  igraph::closeness(g) %>%  as.vector()
+    
+  } else if(input$centralidade == "mediacao"){
+    
+    est <-  igraph::betweenness(g) %>%  as.vector()
+    
+  } else if(input$centralidade == "forca"){
+    
+    est <-  4*sqrt(igraph::strength(g)) %>%  as.vector()
+      
+  } 
+  
+  
+  # Lista de enderecos das imagens
+  caminho <- "https://raw.githubusercontent.com/Protospi/VOOS_COVID19/main/icone_bandeira_paises/"
+  
+  # Declara lista de paises
+  paises_lista <- tibble(id = 1:23,
+                         paises = c("ÁFRICA DO SUL","ALEMANHA","ANGOLA","ARGENTINA",                
+                                    "BRASIL","CANADÁ","CHILE","CHINA",                    
+                                    "COLÔMBIA","ESPANHA","ESTADOS UNIDOS DA AMÉRICA","ETIÓPIA",                  
+                                    "FRANÇA","HOLANDA","ISRAEL","ITÁLIA",                   
+                                    "MÉXICO","PARAGUAI","PERU","REINO UNIDO",              
+                                    "SUÍÇA","URUGUAI","VENEZUELA" )) 
+  
+  # Declara vertices da rede
+  vertices <- tibble(id =paises_lista[paises_lista$paises %in% V(g)$name,"id"] %>%  pull(),
+                     nomes = V(g)$name)
+  
+  nodes <- data.frame(id = as.numeric(unlist(vertices$id)), 
+                      shape =  rep("circularImage", length(vertices$id)),
+                      image = paste0(caminho, unlist(vertices$id), ".png"),
+                      label = vertices$nomes,
+                      value = est)
+  
+  # Declara origem destino
+  origem_destino <- df_g_mes %>%  
+                      left_join(vertices, by = c("origem_pais" = "nomes")) %>% 
+                      left_join(vertices, by = c("destino_pais" = "nomes"),
+                                suffix = c("_from", "_to")) %>% 
+                      select(3:5)
+  
+  edges <- data.frame(from = origem_destino$id_from,
+                      to = origem_destino$id_to,
+                      width = log(origem_destino$passageiros, 10))
+  
+  visNetwork(nodes, edges) %>% 
+    visNodes(shapeProperties = list(useBorderWithImage = TRUE)) %>%
+    visLayout(randomSeed = 2)
+
+})
+
+
+fluidRow(
+  
+  # Linha com 4 colunas
+  column(4,
+         
+        # Define entrada
+        sliderInput("mes",
+                    "Escolha o Intervalo de meses",
+                    min = 1,
+                    max = 12,
+                    value = c(2,8))
+         
+         ),
+  
+   # Linha com 4 colunas
+  column(4,
+         
+         # Seletor de paises
+         selectInput("centralidade",
+                     "Selecione a Estatística de Centralidade",
+                     choices = c("Graus" = "graus",
+                                 "Proximidade" = "proximidade",
+                                 "Mediação" = "mediacao",
+                                 "Força" = "forca"
+                                 ))
+         )
+
+)
+
+
+
+```
+
+</center>
+
+* Observou-se uma queda expressiva de passageiros e trechos se comparados os grafos do mês 1 ao 3 e do mês 4 ao 6.
+
+* Depois do mês 7 parece ocorrer uma retomada no número de passageiros porém com volumes aparentemente menores do que os apresentados no primeiro trimestre.
+
+
+### Linha do Tempo
+
+* Para observar a flutuação das variáveis explicativas ao longo do tempo foi construído o gráfico interativo que permite a observar a linha de contagem da variável selecionada oa longo da variável tempo que comprrende os meses do ano 2020.
+
+* A escala logarítimica na base 10 foi utilizada como transformação dos dados.
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+fluidRow(
+    
+    # Coluna de 4
+    column(4,
+           
+      # Seleciona trechos
+        selectInput("origem_tempo",
+                    " Selecione o Pais",
+                    choices = c("ÁFRICA DO SUL","ALEMANHA","ARGENTINA",
+                                "BRASIL","CANADÁ","CHILE",                    
+                                "CHINA","COLÔMBIA","ESPANHA",                  
+                                "ESTADOS UNIDOS DA AMÉRICA","ETIÓPIA","FRANÇA",
+                                "HOLANDA","ISRAEL","ITÁLIA",
+                                "MÉXICO","PARAGUAI","PERU",                  
+                                "REINO UNIDO","SUÍÇA","URUGUAI",                  
+                                "VENEZUELA","ANGOLA"),
+                    selected = "BRASIL")
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Seleciona variavel de comparação
+    selectInput("variavel_tempo",
+                "Escolha a variável Explicativa",
+                choices = c("Passageiros" = "passageiros",
+                            "Total de Casos" = "total_casos",
+                            "Total Mortes" = "total_mortes",
+                            "Novos Casos" = "novos_casos",
+                            "Total de Casos" = "total_casos"))
+    )
+)
+
+# Renderiza grafico interativo
+renderPlot({
+  
+  # Numero de passageiros origem
+  passageiros_o <- df_g %>% 
+                    group_by(origem_pais, mes) %>% 
+                    summarise(passageiros_o = sum(passageiros))
+  
+  # Numero de passageiros destino
+  passageiros_d <- df_g %>% 
+                    group_by(destino_pais, mes) %>% 
+                    summarise(passageiros_d = sum(passageiros))
+  
+  # Total de passageiros
+  total_passageiros <- passageiros_o %>% 
+                          inner_join(passageiros_d, by = c("origem_pais" = "destino_pais", "mes" = "mes")) %>%
+                          group_by(mes, origem_pais) %>% 
+                          mutate(passageiros = sum(passageiros_o + passageiros_d)) %>% 
+                          select(1,2,5)
+  
+  # Filtra o mês
+  df1 <- covid %>% 
+          left_join(coord, by = c("location" = "name")) %>% 
+          select(2,11, 3:6) %>% 
+          group_by(mes, pais) %>% 
+          summarise(total_mortes  = sum(new_cases),
+                    novas_mortes  = sum(total_cases),
+                    novos_casos = sum(new_deaths),
+                    total_casos = sum(total_deaths)) %>% 
+          inner_join(total_passageiros, by = c("mes" = "mes", "pais" = "origem_pais")) %>% 
+          ungroup() %>% 
+          mutate(mes = factor(mes,
+                              levels = 1:12,
+                              labels = c("Janeiro",
+                                         "Fevereiro",
+                                         "Março",
+                                         "Abril",
+                                         "Maio",
+                                         "Junho",
+                                         "Julho",
+                                         "Agosto",
+                                         "Setembro",
+                                         "Outubro",
+                                         "Novembro",
+                                         "Dezembro"),
+                              ordered=T)) %>% 
+          filter(pais == input$origem_tempo) %>% 
+          mutate(total_mortes  = total_mortes + 1,
+                 novas_mortes  = novas_mortes + 1,
+                 novos_casos = novos_casos + 1,
+                 total_casos = total_casos + 1) %>% 
+          mutate_if(is.numeric, function(x){log(x, 10)}) %>% 
+          ungroup() 
+          
+  
+          
+  # Desenha histograma de variaveis
+  ggplot(data = df1, aes_string(x ="mes", y = input$variavel_tempo, group = 1))+
+    geom_line(color = "green", size=1.1)+
+    geom_point(color = "darkgreen", size = 3)+
+    xlab("Meses")+
+    ylab(bquote(Log[10](.(input$variavel_tempo))))+
+    ggtitle("Linha do Tempo das Variáveis") + 
+    theme(plot.title = element_text(size = 20, face = "bold"),
+          axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1, size = 10))
+  
+})
+
+```
+
+
+### Histograma das Variáveis
+
+* Para inspecionar a distribuição da variáveis a interatividade do pacote `shiny` foi utilizada possibilitando a escolha de qual variável será visualizada.
+
+* A escala logarítimica na base 10 foi utilizada como transformação dos dados.
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+fluidRow(
+  
+    # Coluna de 4
+    column(4,
+           
+      # Seletor de paises
+      selectInput("paises_hist",
+                  "Selecione os países",
+                  choices = c("Brasil na Origem ou Destino" = "p1",
+                              "Sem Brasil" = "p2",
+                              "Todos" = "p3"))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Define entrada
+      sliderInput("mes2_hist",
+                  "Escolha o Intervalo de meses",
+                  min = 1,
+                  max = 12,
+                  value = c(1,6))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Seleciona variavel de comparação
+    selectInput("variavel_hist",
+                "Escolha a variável Explicativa",
+                choices = c("Passageiros" = "passageiros",
+                            "Distância Km" = "distancia_km",
+                            "Total de Casos Origem" = "total_casos_origem",
+                            "Total Mortes Origem" = "total_mortes_origem",
+                            "Novos Casos Origem" = "novos_casos_origem",
+                            "Total de Casos Origem" = "total_casos_origem",
+                            "Novas Mortes Origem" = "novas_mortes_origem",
+                            "Total de Mortes Origem" = "total_mortes_origem",
+                            "Renda per Capta Origem" = "pib_origem",
+                            "Indica de Desenvolvimento Humano Origem" = "idh_origem",
+                            "População Origem" = "populacao_origem",
+                            "Expectativa de vida Origem" = "expectativa_vida_origem",
+                            "Total de Casos Destino" = "total_casos_destino",
+                            "Total Mortes Destino" = "total_mortes_destino",
+                            "Novos Casos Destino" = "novos_casos_destino",
+                            "Total de Casos Destino" = "total_casos_destino",
+                            "Novas Mortes Destino" = "novas_mortes_destino",
+                            "Total de Mortes Destino" = "total_mortes_destino",
+                            "Renda per Capta Destino" = "pib_destino",
+                            "Indica de Desenvolvimento Humano Destino" = "idh_destino",
+                            "População Destino" = "populacao_destino",
+                            "Expectativa de vida Destino" = "expectativa_vida_destino"))
+    )
+)
+
+# Renderiza grafico interativo
+renderPlot({
+  
+  if(input$paises_hist == "p1"){
+    
+    # Somente quando brasil esta em origem ou destino
+    df <- df_g %>%
+      filter((origem_pais == 'BRASIL' & !destino_pais == 'BRASIL') |
+               (!origem_pais == 'BRASIL' & destino_pais == 'BRASIL')) 
+    
+  } else if(input$paises_hist == "p2"){
+    
+    # Remove Brasil
+    df <- df_g %>%
+      filter(!origem_pais == 'BRASIL' & !destino_pais == 'BRASIL')
+    
+  } else if(input$paises_hist == "p3"){
+    
+    # Todos
+    df <- df_g 
+    
+  }
+  
+  # Filtra o mês
+  df = df %>% filter(mes >= input$mes2_hist[1] & mes <= input$mes2_hist[2])
+  
+  # Trasforma em log variaveis de interesse
+  df <- df %>% 
+         mutate(total_mortes_origem  = total_mortes_origem + 1,
+               novas_mortes_origem  = novas_mortes_origem + 1,
+               novos_casos_origem = novos_casos_origem + 1,
+               total_casos_origem = total_casos_origem + 1,
+               total_mortes_destino  = total_mortes_destino + 1,
+               novas_mortes_destino  = novas_mortes_destino + 1,
+               novos_casos_destino = novos_casos_destino + 1,
+               total_casos_destino = total_casos_destino + 1,
+               distancia_km = distancia_km  + 1) %>% 
+  mutate_if(is.numeric, function(x){log(x, 10)})
+  
+  # Desenha histograma de variaveis
+  ggplot(data = df, aes_string(x = input$variavel_hist))+
+   geom_histogram(fill = "darkgreen", color = "black")+
+    xlab(bquote(Log[10](.(input$variavel_hist))))+
+    ylab("Frequência")+
+    ggtitle("Histograma das Variáveis") + 
+    theme(plot.title = element_text(size = 20, face = "bold"))
+  
+})
+
+```
+
+### Log Explicativa vs Log Passageiros
+
+* Foi elaborado o gráfico de comparação entre as potenciais variáveis explicativas e a resposta para avaliar se existia uma tendência de queda ao longo do ano de 2020 no número de passageiros.
+
+* Devido as diferenças de escala foi utilizada a escala logarítmica com base natural nas resposta e na explicativas para acomodar as ordem de grandeza das escalas.
+
+* O função de suavização `geom_smooth(method = "lm")` com metodo de modelo linear do pacote __ggplot2__ foi utilizada para capturar a tendência geral da flutuação do número de passageiros ao longo do tempo por meio da ilustração gráfica.
+
+* As opções de seleção e segmentação do banco por paises com Brasil no destino e origem , sem Brasil e todos os dados foi implementada para visualizar a tendêcia com e sem a influência do grupo majoritário. Botões para selecionar intervalo de meses e variável explicativa também foram emplementados para granularizar os cenários.
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+fluidRow(
+  
+    # Coluna de 4
+    column(4,
+           
+      # Seletor de paises
+      selectInput("paises",
+                  "Selecione os países",
+                  choices = c("Brasil na Origem ou Destino" = "p1",
+                              "Sem Brasil" = "p2",
+                              "Todos" = "p3"))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Define entrada
+      sliderInput("mes2",
+                  "Selecione o Intervalo de meses",
+                  min = 1,
+                  max = 12,
+                  value = c(1,6))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Seleciona variavel de comparação
+    selectInput("variavel",
+                "Selecione a Variável Explicativa",
+                choices = c("Distância Km" = "distancia_km",
+                            "Total de Casos Origem" = "total_casos_origem",
+                            "Total Mortes Origem" = "total_mortes_origem",
+                            "Novos Casos Origem" = "novos_casos_origem",
+                            "Total de Casos Origem" = "total_casos_origem",
+                            "Novas Mortes Origem" = "novas_mortes_origem",
+                            "Total de Mortes Origem" = "total_mortes_origem",
+                            "Renda per Capta Origem" = "pib_origem",
+                            "Indica de Desenvolvimento Humano Origem" = "idh_origem",
+                            "População Origem" = "populacao_origem",
+                            "Expectativa de vida Origem" = "expectativa_vida_origem",
+                            "Total de Casos Destino" = "total_casos_destino",
+                            "Total Mortes Destino" = "total_mortes_destino",
+                            "Novos Casos Destino" = "novos_casos_destino",
+                            "Total de Casos Destino" = "total_casos_destino",
+                            "Novas Mortes Destino" = "novas_mortes_destino",
+                            "Total de Mortes Destino" = "total_mortes_destino",
+                            "Renda per Capta Destino" = "pib_destino",
+                            "Indica de Desenvolvimento Humano Destino" = "idh_destino",
+                            "População Destino" = "populacao_destino",
+                            "Expectativa de vida Destino" = "expectativa_vida_destino"),
+                selected = "Total de Casos Origem")
+    )
+)
+
+# Renderiza grafico interativo
+renderPlot({
+  
+  if(input$paises == "p1"){
+    
+    # Somente quando brasil esta em origem ou destino
+    df <- df_g %>%
+      filter((origem_pais == 'BRASIL' & !destino_pais == 'BRASIL') |
+               (!origem_pais == 'BRASIL' & destino_pais == 'BRASIL')) 
+    
+  } else if(input$paises == "p2"){
+    
+    # Remove Brasil
+    df <- df_g %>%
+      filter(!origem_pais == 'BRASIL' & !destino_pais == 'BRASIL')
+    
+  } else if(input$paises == "p3"){
+    
+    # Todos
+    df <- df_g 
+    
+  }
+  
+  # Filtra o mês
+  df = df %>% filter(mes >= input$mes2[1] & mes <= input$mes2[2])
+  
+  # Trasforma em log variaveis de interesse
+  df <- df %>% 
+         mutate(total_mortes_origem  = total_mortes_origem + 1,
+               novas_mortes_origem  = novas_mortes_origem + 1,
+               novos_casos_origem = novos_casos_origem + 1,
+               total_casos_origem = total_casos_origem + 1,
+               total_mortes_destino  = total_mortes_destino + 1,
+               novas_mortes_destino  = novas_mortes_destino + 1,
+               novos_casos_destino = novos_casos_destino + 1,
+               total_casos_destino = total_casos_destino + 1,
+               distancia_km = distancia_km  + 1) %>% 
+         mutate_if(is.numeric, function(x){log(x, 10)})
+  
+  # Desenha gráfico suavizado relação passageiros covariável
+  ggplot(data = df, aes_string(x = input$variavel, y = "passageiros"))+
+    geom_point(color = "darkgreen", size = 3, alpha = 0.3)+
+    geom_smooth(method = "lm")+
+    xlab(bquote(Log[10](.(input$variavel))))+
+    ylab(bquote(Log[10]("Passageiros")))+
+    ggtitle("Suavizador de modelo Linear Resposta ~ Explicativa") + 
+    theme(plot.title = element_text(size = 20, face = "bold"))
+  
+})
+
+```
+
+* Tanto para número de mortos como para o total de casos nos trechos em que o Brasil está na origem como no destino, foi possível observar uma queda de 10 para 6 pontos na escala logarítimica do número de passageiros nos 6 primeiros meses. Transformando de volta para a escala original, o aumento de mortes de 0 para 162754 indicou a tendência de relação linear de queda na demanda de  passageiros na ordem de 21623 indivíduos. 
+
+* Para os trecho que não envolvem o Brasil como país de origem ou destino observou-se também uma tendência de queda de aproximadamente 349 passageiros nos mesmos 6 primeiros meses.
+
+* No período dos meses 7 ao 12, ou seja no segundo semestre de 2020, observou-se uma queda menor de passageiros entre paises se desconsiderando o Brasil. Porém foi possível observar a tendência de um aumento linear da ordem de 1306 passageiros quando considerado o Brasil como pais de origem ou destino para ambas as variáveis explicativas. 
+
+* O cenário que considerou todos os países apresentou resultados semelhantes ao cenário com Brasil como origem ou destino dos trechos. Tal constatação provavelmente se deve ao fato de que a maioria das operações das companhias aéreas brasileiras correm com o Brasil na origem ou no destino.
+
+### Contagem do Número de Passageiros
+
+* Para contagem do número de passageiros em cada trecho foi desenvolvido um gráfico de barras em shiny que possibilita a escolha do país, a direção, ou seja, se o país seria considerado como destino ou origem e o intervalo de meses considerado na visualização.
+
+* Como o Brasil apresenta um número de passageiros muito maior que o restante da amostra, o número de passageiros foi considerado na escala logarítimica natural.
+
+* O gráfico paresentará um erro se o pais escolhido não apresentar registros dentro do período selecionado. Alterando o país para algum que possua observações no intervalo de tempo considerado o funcionamento volta ao normal.
+
+```{r warning=F, error=F, message=F, fig.align='center', fig.height=8, fig.width=9}
+
+fluidRow(
+  
+  # Linha com 4 colunas
+  column(4,
+         
+         # Seleciona trechos
+        selectInput("trecho",
+                    " Selecione o Pais",
+                    choices = c("ÁFRICA DO SUL","ALEMANHA","ARGENTINA",
+                                "BRASIL","CANADÁ","CHILE",                    
+                                "CHINA","COLÔMBIA","ESPANHA",                  
+                                "ESTADOS UNIDOS DA AMÉRICA","ETIÓPIA","FRANÇA",
+                                "HOLANDA","ISRAEL","ITÁLIA",
+                                "MÉXICO","PARAGUAI","PERU",                  
+                                "REINO UNIDO","SUÍÇA","URUGUAI",                  
+                                "VENEZUELA","ANGOLA"),
+                    selected = "BRASIL")
+         
+         ),
+  
+   # Linha com 4 colunas
+  column(4,
+         
+         # Seletor de paises
+         selectInput("direcao",
+                     "Selecione Sentido",
+                     choices = c("Origem" = "origem",
+                                 "Destino" = "destino"))
+         ),
+  
+   # Linha com 4 colunas
+  column(4,
+         
+         # Define entrada
+         sliderInput("mes3",
+                     "Selecione o Intervalo de Meses",
+                     min = 1,
+                     max = 12,
+                     value = c(1,6))
+         
+         )
+
+)
+
+# Renderiza grafico interativo
+renderPlot({
+  
+  if(input$direcao == "origem"){
+    
+    # Combina variaveis origem destino
+    df_trecho <- df_g %>% 
+      mutate(trecho = paste0(origem_pais, 
+                             " - > ",
+                             destino_pais)) %>% 
+      filter(str_detect(input$trecho, origem_pais))
+    
+  } else if(input$direcao == "destino") {
+    
+    # Combina variaveis origem destino
+    df_trecho <- df_g %>% 
+      mutate(trecho = paste0(origem_pais, 
+                             " -> ",
+                             destino_pais)) %>% 
+      filter(str_detect(input$trecho, destino_pais))
+    
+  }
+  
+  # Filtra o mês
+  df_trecho = df_trecho %>% filter(mes >= input$mes3[1] & mes <= input$mes3[2])
+
+  # Exploratoria de numero de passageiros
+  ggplot(data = df_trecho, aes (x=trecho, y=log(passageiros, 10))) +        
+    geom_bar(position = position_dodge(), stat = "identity", fill = "darkgreen", color = "black") + 
+    coord_flip () + 
+    scale_x_discrete(name = "", position = "top") +    
+    scale_y_continuous(name = bquote(Log[10]("Passageiros")),
+                       breaks = seq(0, 17, by = 1), 
+                       labels = seq(0,  17, by =  1))+
+    ggtitle("Contagem do Número de Passageiros") + 
+    theme(plot.title = element_text(size = 20, face = "bold"))  
+  
+}, width=900, height=500)
+
+```
+
+* O gráfico de barras auxiliou para confirmar e quantificar as evidências exibidas nos grafos por intervalo de meses.
+
+* Foi possível constatar também as mesmas quedas no número de passageiros se comparados os meses de 1 a 3 e de 4 a 6 em praticamente todos os países.
+
+* É interessante notar também a queda no número de rotas ou trechos. Por exemplo o Chile era operado por 6 rotas como origem e destino no primeiro semestre e passou a ser operado somente por 3 no segundo semestre.
+
+***
+
+## Estatísticas
+
+* Foram consideradas estatísticas descritivas das redes de relações indicadas no livro _"Introdução aos Grafos Aleatórios"_ para identificar algumas características da rede de transporte aéreo das companhias brasileiras em 2020.
+
+### Distribuição dos Graus
+
+* Para visualizar a distribução dos graus da rede de transporte aéreo foi construído um histograma dos graus dos países(vertices).
+
+* Um gráfico de dispersão da intesidade dos graus do vertices contra o logarítimo base 10 do grau do vertices també foi implmentado para compesar a ordem das escalas. 
+
+```{r warning=F, error=F, message=F, fig.align='center'}
+
+# Declara grafo
+g <- graph_from_data_frame(df_g, directed=T)
+
+# Grafico 7
+p7 <- ggplot(tibble(graus = degree(g)), aes(x = graus))+
+        geom_histogram(fill = "darkgreen", color = "black")+
+        xlab("Graus dos Vertices")+
+        ylab("Frequência")+
+        ggtitle("Histograma de Graus dos Vértices") + 
+        theme(plot.title = element_text(size = 20, face = "bold")) 
+
+
+# Indice
+ind <- (degree_distribution(g) != 0)
+
+# Grafico 8
+p8 <- ggplot(tibble(vertice =  (1:max(degree(g))-1)[ind],
+                    grau =  degree_distribution(g)[ind]),
+             aes(x = vertice, y = grau))+
+        geom_point(color = "darkgreen", size = 3)+
+        xlab(bquote(Log[10]("Vertice")))+
+        ylab(bquote(Log[10]("Intensidade")))+
+        ggtitle("Log-Log da Distribuição dos Graus") + 
+        theme(plot.title = element_text(size = 20, face = "bold"))+
+        scale_x_continuous(trans = 'log10') +
+        scale_y_continuous(trans = 'log10')
+
+# Desenha graficos em grid
+grid.arrange(p7, p8, nrow = 2)
+
+```
+
+* O gráfico da distribuição de graus evidenciou a presença de pelo menos um país, no caso o Brasil, com um grau de ordem superior aos demais países.
+
+* Além de indicar a presença de algum outro país com grau de ordem superior, o gráfico de intesidade na escala logarítimica  indicou uma observação com log de intensidade muito baixo em relação as demais.
+
+### Estatísticas da Rede
+
+* As estatísticas da rede como medidas de centralidade e contagem amplamente utilizadas na área foram calculadas para fornecer estimativas como formato, extensão, comunicação, etc....
+
+* Funções do pacote `igraph` foram utilizadas para calcular as estatísticas da rede.
+
+```{r warning=F, error=F, message=F}
+
+# Numero de Graus
+vertices <- vcount(g)
+
+# Numero de vertices
+arestas <- ecount(g)
+
+# Calcula estatisticas
+densidade_arestas <- edge_density(g)
+
+# Calcula trnasitividade
+transitividade <- transitivity(g)
+
+# Calcula reciprocidade
+reciprocidade <- reciprocity(g, mode="default")
+
+# Calcula Diâmetro
+diametro <- diameter(g)
+
+# Calcula grau de Assortatividade
+assortatividade <- assortativity.degree(g)
+
+# Declara data frame de medidas de centralidade
+centralidade <- tibble(Estatisticas = c("Nº de Vertices",
+                                        "Nº de Arestas",
+                                        "Densidade das Arestas",
+                                        "Transitividade",
+                                        "Reciprocidade",
+                                        "Diâmetro",
+                                        "Assortatividade"),
+                       Valores = c(vertices,
+                                   arestas,
+                                   densidade_arestas,
+                                   transitividade,
+                                   reciprocidade,
+                                   diametro,
+                                   assortatividade
+                                   )
+                       )
+
+# Arredonda resultados
+centralidade$Valores <- round(centralidade$Valores, 4)
+
+# Renderiza tabela de resultados
+renderDT({
+  
+  # Tabela de coeficientes
+  datatable(centralidade, options = list(dom = 't', pageLength = 7))
+  
+})
+
+```
+
+* O número total de vertices igual a 24 indica a presença de 24 países na análise.
+
+* O número total de arestas igual a 508 indica a presença de 508 trechos na análise, ou seja, 508 únicas de origens e destinos.
+
+* O cálculo da densidade das arestas apresentou resultado de 92 %, ou seja, o grafo é bastante conectado porque o número de arestas é bem próximo do máximo de arestas possíveis considerando 24 vertices.
+
+* A cálculo da transitivdade ou coeficiênte de cluster apresentou o valor de 0.18, o que significa a fraca presença de clusters ou pequena fração de triplas transitivas. Em alguns testes de cluster realizados no rascunho do trabalho que não serão aqui apresentados o fato pode ser confirmado quando algorítimo `fastgreedy.community` só encontrou 1 cluster em torno do Brasil.
+
+* O cálculo da reciprocidade resultou no valor de 0.97, o que indicou que os vertices desta rede direcionada estavam mutualmente ligados. O resultado é razoável já que espera-se que os aviões que vão de uma origem para um destino retornem para esta mesma origem partindo de seus destinos anteriores.
+
+* O diâmetro calculado para a rede foi de 2, ou seja, o maior dos caminhos entre os caminhos mais curtos dos dois vertices mais distantes foi 2. Isto significa que a rede não e muito densa e que é possível atravessar a rede em poucos passos.
+
+* A assortatividade de -0.7 indcou a tendência de vertices com graus maiores se associarem com vertices de graus menores. Tal fato pode ser verificado pela quantidade de associações do Brasil que é o vertice de maior grau na rede com os demais países que seriam os vertices com graus menores.
+
+***
+
+# Modelagem
+
+* O autor sugere no capitulo 10 do livro Analise Estatística de redes de relações que seervem como conduites para flixos como as redes aéreas poderiam ser modelados por
+
+
+## Modelo
+
+* Os modelos de gravidade são largamente utilizados para descrever o nível de agregação da interação entre as pessoas de diferentes populações. Neste caso parece adequado considerar o modelo de gravidade para rede de tráfego aéreo de pessoas entre países.
+
+* Como sugerido por kolackzyk citando a lei Newton sobre a gravitação universal o volume da população dos vertices também seria um dado significativo para na relação de proporcionalidade do fluxo. Antes da entrega pretendo implementar essa variável como explicativa.
+
+### Especificações
+
+* $\zeta$ = {origens i e destino j} $\in V$ onde I = | $\zeta$ | e J = | $\zeta$ |
+
+* $Z_{i,j} =$ tráfego de pessoas fluido de i $\in \zeta$ até j $\in \zeta$ em um período de tempo.
+
+* $Z_{i,j} \sim Poisson(\lambda)$
+
+* $E(Z_{i,j}) = h_{0}(i) \hspace{0.3cm}  h_{d}(j) \hspace{0.3cm} h_{s}(c_{i,j})$
+
+* As funções $h_{0}(i) \hspace{0.3cm}  h_{d}(j) \hspace{0.3cm} e \hspace{0.3cm} h_{s}(c_{i,j})$ são positivas e representam a origem i, o destino j e o vetor $c_{i,j}$ de K chamado de separação dos atributos, nesta caso a distãncia em quilômetros.
+
+* Transformação para a forma log-linear com objetivo de facilitar os métodos estatísticos de inferência.
+
+* $log \hspace{0.1cm} E(Z_{i,j}) = log \hspace{0.1cm} h_{0}(i) \hspace{0.3cm} + \hspace{0.3cm} log \hspace{0.1cm} h_{d}(j) \hspace{0.3cm} +  \hspace{0.3cm} log \hspace{0.1cm} h_{s}(c_{i,j})$
+
+
+### Ajuste
+
+* A variável resposta e as variáveis numéricas foram transformadas para escala de logarítimica na base 10 depois da modelagem conforme indicado na especifição do modelo. 
+
+* O pacote shiny possibilitou a construção de 3 botões para filtrar por Brasil, sem Brasil e todos, o período (intervalo de meses) sobre o qual o modelo seria ajustado e as covariáveis que seriam inseridas no modelo.
+
+* Os dados foram ajustado utilizando a função `glm` da biblioteca `stats` base R com a familia Poisson.
+
+* O a função `tidy` do pacote `broom` foi utilizada para extrair a tabela de coeficientes e estatísticas do modelo. 
+
+* os gráficos de ajuste foram construídos com o pacote ggplot.
+
+```{r warning=F, error=F, message=F}
+
+# Declara modelo interativo
+df_modelo <- reactive({
+  
+    if(input$paisesmodelo == "p1"){
+      
+      # Somente quando brasil esta em origem ou destino
+      df <- df_g %>%
+        filter((origem_pais == 'BRASIL' & !destino_pais == 'BRASIL') |
+                 (!origem_pais == 'BRASIL' & destino_pais == 'BRASIL')) 
+      
+    } else if(input$paisesmodelo == "p2"){
+      
+      # Remove Brasil
+      df <- df_g %>%
+        filter(!origem_pais == 'BRASIL' & !destino_pais == 'BRASIL')
+      
+    } else if(input$paisesmodelo == "p3"){
+      
+      # Todos
+      df <- df_g 
+      
+    }
+    
+    # Filtra o mês
+    df = df %>% filter(mes >= input$mesesmodelo[1] & mes <= input$mesesmodelo[2])
+    
+    # Retorno
+    return(df)
+})
+    
+# Declara modelo interativo
+modelo_interativo <- reactive({
+  
+    # Define formula geral
+    formula_geral <- as.formula(paste("passageiros", paste(input$variavelmodelo, collapse=" + "), sep=" ~ "))
+    
+    # Ajusta modelo de Poisson
+    gm.g <- glm(formula_geral,
+                family=poisson(link = "log"),
+                data=df_modelo())
+    
+    # Retorno da funcao
+    return(gm.g)
+  
+})
+
+# Renderiza tabela de resultados
+renderDT({
+  
+  # Resumo do Modelo
+  resultados <- tidy(modelo_interativo()) %>% 
+                     mutate_if(is.numeric, round, 6)
+    
+  # Altera nome das colunas
+  colnames(resultados) <- c("Termo", "Coeficiente", "Erro Padrão", "Estatística","P-Valor")
+  
+  # Tabela de coeficientes
+  datatable(resultados,
+            options = list(dom = 'tip',
+                           pageLength = 5,
+                           language = list(url = 'https://cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json')),
+            caption = htmltools::tags$caption("Tabela do Modelo", style="color:black; font-weight: bold"))
+  
+})
+
+# Renderiza Grafico
+renderPlot({
+  
+  # Constroi data frame de valores ajustados vs valores reais
+  real_ajustado <- tibble(passageiros = log(df_modelo()$passageiros, 10),
+                          ajustados = log(modelo_interativo()$fitted.values, 10))
+  
+  # Rotulo
+  rotulo_aic <- paste0("AIC: ", round(modelo_interativo()$aic))
+  
+  # Rotulo do Erro
+  rotulo_erro <- paste0("Desvio Residual: ", round(deviance(modelo_interativo())))
+  
+  # Grafico
+  p5 <- ggplot(data = real_ajustado,
+               aes(x = passageiros,
+                   y = ajustados))+
+          geom_point(color = "darkgreen",
+                     alpha = 0.2, size = 3)+
+          geom_abline(slope = 1,
+                      intercept = 0,
+                      color = "red")+
+          xlab(expression(Log[10]("Número de Passageiros")))+
+          ylab(expression(Log[10]("Valores Ajustados")))+
+          xlim(c(0,6))+
+          ylim(c(0,6))+
+          ggtitle("Observados x Ajustados") + 
+          labs(subtitle = rotulo_aic)+
+          theme(plot.title = element_text(size = 15, face = "bold"),
+                plot.subtitle = element_text(size = 13, face = "bold", color = "darkgreen")) 
+  
+  # Residuos
+  res <- residuals.glm(modelo_interativo(), type = "response")
+  relres <- res / df_modelo()$passageiros
+  lrelres <- log(abs(relres),10)
+  res.sgn <- (res>=0)
+    
+  # Constroi data frame de residuos vs valores reais positivos
+  real_residuos_positivo <- tibble(passageiros = log(df_modelo()$passageiros, 10)[res.sgn],
+                                   residuos = lrelres[res.sgn])
+  
+  # Constroi data frame de residuos vs valores reais
+  real_residuos_negativo <- tibble(passageiros = log(df_modelo()$passageiros, 10)[!res.sgn],
+                                   residuos = lrelres[!res.sgn])
+  
+  # Grafico
+  p6 <- ggplot(data = real_residuos_positivo, aes(x = passageiros, y = residuos))+
+          geom_point(color = "darkgreen",
+                     alpha = 0.2,
+                     size = 3)+
+          geom_point(data = real_residuos_negativo,
+                     aes(x = passageiros,
+                         y = residuos),
+                     color = "darkgreen",
+                     alpha = 0.2,
+                     size = 3)+
+          geom_hline(yintercept = 0, color = "red")+
+          xlab(expression(Log[10]("Número de Passageiros")))+
+          ylab(expression(Log[10]("Erro Relativo")))+
+          ggtitle("Observados x Erros") + 
+          labs(subtitle = rotulo_erro)+
+          theme(plot.title = element_text(size = 15, face = "bold"),
+                plot.subtitle = element_text(size = 13, face = "bold", color = "darkgreen"))   
+  
+  # Grid dos graficos de faltantes antes e depois
+  grid.arrange(p5, p6, ncol = 2)
+  
+})
+
+
+# Seletores do Modelo
+fluidRow(
+  
+    # Coluna de 4
+    column(4,
+           
+      # Seletor de paises
+      selectInput("paisesmodelo",
+                  "Selecione os países",
+                  choices = c("Brasil na Origem ou Destino" = "p1",
+                              "Sem Brasil" = "p2",
+                              "Todos" = "p3"))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Define entrada
+      sliderInput("mesesmodelo",
+                  "Escolha o Intervalo de meses",
+                  min = 1,
+                  max = 12,
+                  value = c(1,6))
+    ),
+    
+    # Coluna de 4
+    column(4,
+           
+      # Seleciona variavel de comparação
+    pickerInput("variavelmodelo",
+                "Escolha as variáveis Explicativas",
+                choices = c("Origem Pais" = "origem_pais",
+                            "Destino Pais" = "destino_pais",
+                            "Distância Km" = "distancia_km",
+                            "Total de Casos Origem" = "total_casos_origem",
+                            "Total Mortes Origem" = "total_mortes_origem",
+                            "Novos Casos Origem" = "novos_casos_origem",
+                            "Novas Mortes Origem" = "novas_mortes_origem",
+                            "Renda per Capta Origem" = "pib_origem",
+                            "Indice de Desenvolvimento Humano Origem" = "idh_origem",
+                            "População Origem" = "populacao_origem",
+                            "Expectativa de vida Origem" = "expectativa_vida_origem",
+                            "Total de Casos Destino" = "total_casos_destino",
+                            "Total Mortes Destino" = "total_mortes_destino",
+                            "Novos Casos Destino" = "novos_casos_destino",
+                            "Novas Mortes Destino" = "novas_mortes_destino",
+                            "Renda per Capta Destino" = "pib_destino",
+                            "Indica de Desenvolvimento Humano Destino" = "idh_destino",
+                            "População Destino" = "populacao_destino",
+                            "Expectativa de vida Destino" = "expectativa_vida_destino"),
+                selected = c("origem_pais", "destino_pais"),
+                multiple = TRUE)
+    )
+)
+
+
+
+
+```
+
+* É possível verificar que os erros variam muito em magnitude. Uma grande quantidade de erros foram estimados na ordem de $z_{i,j}$ ou menos, ou seja, o logarítimo do erro é menor que 0. porém algum foram estimados com uma ordem de magnitude maior que 10 vezes a ordem de $z_{i,j}$.
+
+* Também é possível verificar que o erro diminui com o aumento do volume no fluxo de passageiros.
+
+## Conclusões
+
+
+***
+
+# Referências
+
+* As referêcias de maior relevância foram classificadas por categorias. Diversas fontes para detalhes pontuais da análise como uso do shiny e Rmarkdown não foram citadas devido ao grande número mas foram fundamentais para a produção deste relatório.
+
+## Bibliográficas
+
+* Eric D. Kolaczyk. 2009. Statistical Analysis of Network Data: Methods and Models (1st. ed.). Springer Publishing Company, Incorporated.
+
+## DEST - UFMG
+
+* Slides e Video aulas do curso Introdução a Grafos Aleatórios.
+
+## Dados
+
+* Transporte Aéreo: [ANAC](https://www.anac.gov.br/assuntos/dados-e-estatisticas/dados-estatisticos/dados-estatisticos)
+* COVID 19: [ourworldindata](https://ourworldindata.org/coronavirus#which-countries-are-making-progress-against-the-pandemic)
+* Coordenadas Geográficas: [developers.google](https://developers.google.com/public-data/docs/canonical/countries_csv)
+* Código dos Países: [sport-histoire](https://www.sport-histoire.fr/pt/Geografia/Codigos_ISO_Paises.php)
+
+## R
+
+* Pacotes e bibliotecas utilizadas:
+  + __tidyverse__
+  + __igraph__
+  + __lubridate__
+  + __DT__
+  + __naniar__
+  + __shiny__
+  + __broom__
+  + __geosphere__
+  + __gridExtra__
+
+## Rede Mundial de Computadores
+  
+  * URL da foto Capa: [https://www.npr.org/sections/goatsandsoda/2020/08/21/904689295/coronavirus-faq-so-do-lots-of-people-get-covid-19-from-flying](https://www.npr.org/sections/goatsandsoda/2020/08/21/904689295/coronavirus-faq-so-do-lots-of-people-get-covid-19-from-flying)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
