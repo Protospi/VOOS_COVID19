@@ -1597,8 +1597,6 @@ fluidRow(
 
 * Finalmente pode-se concluir que as informações que não foram achadas de forma estruturada como datas de fechamentos e aberturas dos espaços aéreos de cada país em função da intensificação ou diminuição da pandemia talvez forneçam explicações melhores para a variação no número de passageiros do que o número de casos e mortes. Essa informações poderiam ser estruturadas e incorporadas no modelo no intuito de melhorar o ajuste ou mesmo confirmar se as informações sobre o Covid-19 conseguem capturar essas infromações.
 
-
-
 ***
 
 # Referências
